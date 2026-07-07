@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tourenbuch 6</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>Tourenbuch 6 <span>Klettertagebuch</span></h1>
+  <nav>
+    <button data-tab="gebiete">Gebiete &amp; Gipfel</button>
+    <button data-tab="wege">Wege</button>
+    <button data-tab="begehungen">Begehungen</button>
+    <button data-tab="statistik">Statistik</button>
+  </nav>
+</header>
+
+<main id="main">
+  <div class="loading">Lade…</div>
+</main>
+
+<!-- Detail slide-over -->
+<div class="detail-overlay" id="detail-overlay"></div>
+<div class="detail-panel" id="detail-panel"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
