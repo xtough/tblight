@@ -4,18 +4,70 @@ Uses isql.exe (FB 2.1) to extract data since Python FB drivers require FB 3+.
 """
 
 import argparse
+import os
 from pathlib import Path
 import sqlite3
+import shutil
 import subprocess
 import re
 import sys
 
 ROOT = Path(__file__).parent
 
-ISQL = r'C:/Program Files/Firebird/Firebird_2_1/bin/isql.exe'
-FB_DSN = r'localhost:C:/SAPDevelop/tb/TB6DATENBANK.FDB'
-FB_USER = 'SYSDBA'
-FB_PASS = 'masterkey'
+DEFAULT_WINDOWS_ISQL = Path('C:/Program Files/Firebird/Firebird_2_1/bin/isql.exe')
+DEFAULT_TBBACKUP = ROOT / 'TB6DATENBANK.FDB'
+DEFAULT_FB_HOST = 'localhost'
+DEFAULT_FB_USER = 'SYSDBA'
+DEFAULT_FB_PASS = 'masterkey'
+
+
+def normalize_backup_path(path_value):
+    backup = Path(path_value)
+    if not backup.is_absolute():
+        backup = ROOT / backup
+    return backup.resolve()
+
+
+def build_firebird_dsn(host, backup_path):
+    normalized = normalize_backup_path(backup_path)
+    return f'{host}:{normalized.as_posix()}'
+
+
+def resolve_isql_path(preferred=None):
+    if preferred:
+        return Path(preferred)
+    env_path = os.getenv('TB_ISQL_PATH')
+    if env_path:
+        return Path(env_path)
+    found = shutil.which('isql')
+    if found:
+        return Path(found)
+    return DEFAULT_WINDOWS_ISQL
+
+
+def default_runtime_config():
+    backup = normalize_backup_path(os.getenv('TBBACKUP', str(DEFAULT_TBBACKUP)))
+    host = os.getenv('TB_FIREBIRD_HOST', DEFAULT_FB_HOST)
+    user = os.getenv('TB_FIREBIRD_USER', DEFAULT_FB_USER)
+    password = os.getenv('TB_FIREBIRD_PASS', DEFAULT_FB_PASS)
+    isql_path = resolve_isql_path()
+    return {
+        'tbbackup': backup,
+        'fb_host': host,
+        'fb_user': user,
+        'fb_pass': password,
+        'isql': isql_path,
+        'fb_dsn': build_firebird_dsn(host, backup),
+    }
+
+
+RUNTIME = default_runtime_config()
+
+# Kept for compatibility with modules importing these names.
+ISQL = str(RUNTIME['isql'])
+FB_DSN = RUNTIME['fb_dsn']
+FB_USER = RUNTIME['fb_user']
+FB_PASS = RUNTIME['fb_pass']
 SQLITE_DB = ROOT / 'TB6.sqlite'
 SQLITE_CANDIDATE_DB = ROOT / 'TB6.sqlite.candidate'
 VALIDATION_SCRIPT = ROOT / 'validate_migration_fidelity.py'
@@ -28,13 +80,64 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--accepted-db', default=str(SQLITE_DB), help='Accepted SQLite database path')
     parser.add_argument('--candidate-db', default=str(SQLITE_CANDIDATE_DB), help='Candidate SQLite database path written before validation')
+    parser.add_argument('--tbbackup', default=os.getenv('TBBACKUP', str(DEFAULT_TBBACKUP)), help='Firebird backup/database file path (TBBACKUP)')
+    parser.add_argument('--fb-host', default=os.getenv('TB_FIREBIRD_HOST', DEFAULT_FB_HOST), help='Firebird host used to build DSN')
+    parser.add_argument('--fb-user', default=os.getenv('TB_FIREBIRD_USER', DEFAULT_FB_USER), help='Firebird user name')
+    parser.add_argument('--fb-pass', default=os.getenv('TB_FIREBIRD_PASS', DEFAULT_FB_PASS), help='Firebird password')
+    parser.add_argument('--isql', default=os.getenv('TB_ISQL_PATH'), help='Path to Firebird isql executable')
     return parser.parse_args()
+
+
+def configure_runtime(args):
+    runtime = {
+        'tbbackup': normalize_backup_path(args.tbbackup),
+        'fb_host': args.fb_host,
+        'fb_user': args.fb_user,
+        'fb_pass': args.fb_pass,
+        'isql': resolve_isql_path(args.isql),
+    }
+    runtime['fb_dsn'] = build_firebird_dsn(runtime['fb_host'], runtime['tbbackup'])
+    return runtime
+
+
+def apply_runtime(runtime):
+    global RUNTIME, ISQL, FB_DSN, FB_USER, FB_PASS
+    RUNTIME = runtime
+    ISQL = str(runtime['isql'])
+    FB_DSN = runtime['fb_dsn']
+    FB_USER = runtime['fb_user']
+    FB_PASS = runtime['fb_pass']
+
+
+def preflight_diagnostics(runtime):
+    print('Preflight diagnostics:')
+    print(f"  ROOT: {ROOT}")
+    print(f"  TBBACKUP: {runtime['tbbackup']}")
+    print(f"  Firebird host: {runtime['fb_host']}")
+    print(f"  Firebird DSN: {runtime['fb_dsn']}")
+    print(f"  isql path: {runtime['isql']}")
+    print(f"  Validation script: {VALIDATION_SCRIPT}")
+
+    errors = []
+    if not Path(runtime['tbbackup']).exists():
+        errors.append(f"Missing Firebird input file: {runtime['tbbackup']}")
+    if not Path(runtime['isql']).exists():
+        errors.append(f"Missing isql executable: {runtime['isql']} (set TB_ISQL_PATH or --isql)")
+    if not VALIDATION_SCRIPT.exists():
+        errors.append(f"Missing validation script: {VALIDATION_SCRIPT}")
+
+    if errors:
+        print('Preflight failed:')
+        for err in errors:
+            print(f'  - {err}')
+        return False
+    return True
 
 
 def isql(sql):
     """Run SQL via isql and return stdout as a string."""
     result = subprocess.run(
-        [ISQL, FB_DSN, '-user', FB_USER, '-password', FB_PASS, '-q'],
+        [str(RUNTIME['isql']), RUNTIME['fb_dsn'], '-user', RUNTIME['fb_user'], '-password', RUNTIME['fb_pass'], '-q'],
         input=sql.encode('latin-1'),
         capture_output=True,
         timeout=120,
@@ -178,7 +281,7 @@ def build_export_select(columns):
 def export_table_records(table, columns):
     sql = f'SET HEADING OFF;\nSELECT {build_export_select(columns)} FROM "{table}";\n'
     result = subprocess.run(
-        [ISQL, FB_DSN, '-user', FB_USER, '-password', FB_PASS, '-q'],
+        [str(RUNTIME['isql']), RUNTIME['fb_dsn'], '-user', RUNTIME['fb_user'], '-password', RUNTIME['fb_pass'], '-q'],
         input=sql.encode('latin-1'),
         capture_output=True,
         timeout=300,
@@ -322,6 +425,16 @@ def run_validation(candidate_db, accepted_db):
             str(candidate_db),
             '--accepted-db',
             str(accepted_db),
+            '--tbbackup',
+            str(RUNTIME['tbbackup']),
+            '--fb-host',
+            str(RUNTIME['fb_host']),
+            '--fb-user',
+            str(RUNTIME['fb_user']),
+            '--fb-pass',
+            str(RUNTIME['fb_pass']),
+            '--isql',
+            str(RUNTIME['isql']),
         ],
         check=False,
     )
@@ -348,6 +461,12 @@ def promote_candidate(candidate_db, accepted_db):
 
 if __name__ == '__main__':
     args = parse_args()
+    runtime = configure_runtime(args)
+    apply_runtime(runtime)
+
+    if not preflight_diagnostics(runtime):
+        raise SystemExit(2)
+
     accepted_db = Path(args.accepted_db)
     candidate_db = Path(args.candidate_db)
 

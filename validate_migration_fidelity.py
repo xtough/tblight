@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -13,13 +14,30 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from migrate_to_sqlite import FB_DSN, FB_PASS, FB_USER, ISQL, get_tables
+from migrate_to_sqlite import (
+    DEFAULT_FB_HOST,
+    DEFAULT_FB_PASS,
+    DEFAULT_FB_USER,
+    DEFAULT_TBBACKUP,
+    build_firebird_dsn,
+    normalize_backup_path,
+    resolve_isql_path,
+)
 
 ROOT = Path(__file__).parent
 DEFAULT_TARGET_DB = ROOT / "TB6.sqlite"
 DEFAULT_ACCEPTED_DB = ROOT / "TB6.sqlite"
 DEFAULT_REPORT_DIR = ROOT / "validation_reports"
 SEPARATOR = "|~|"
+
+RUNTIME = {
+    "tbbackup": normalize_backup_path(os.getenv("TBBACKUP", str(DEFAULT_TBBACKUP))),
+    "fb_host": os.getenv("TB_FIREBIRD_HOST", DEFAULT_FB_HOST),
+    "fb_user": os.getenv("TB_FIREBIRD_USER", DEFAULT_FB_USER),
+    "fb_pass": os.getenv("TB_FIREBIRD_PASS", DEFAULT_FB_PASS),
+    "isql": resolve_isql_path(os.getenv("TB_ISQL_PATH")),
+}
+RUNTIME["fb_dsn"] = build_firebird_dsn(RUNTIME["fb_host"], RUNTIME["tbbackup"])
 
 BLOCKING_ENDPOINTS = [
     "/api/regionen",
@@ -256,12 +274,54 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-db", default=str(DEFAULT_TARGET_DB), help="SQLite database to validate")
     parser.add_argument("--accepted-db", default=str(DEFAULT_ACCEPTED_DB), help="Accepted production SQLite path for metadata")
     parser.add_argument("--report", help="Explicit JSON report path")
+    parser.add_argument("--tbbackup", default=os.getenv("TBBACKUP", str(DEFAULT_TBBACKUP)), help="Firebird backup/database file path (TBBACKUP)")
+    parser.add_argument("--fb-host", default=os.getenv("TB_FIREBIRD_HOST", DEFAULT_FB_HOST), help="Firebird host used to build DSN")
+    parser.add_argument("--fb-user", default=os.getenv("TB_FIREBIRD_USER", DEFAULT_FB_USER), help="Firebird user name")
+    parser.add_argument("--fb-pass", default=os.getenv("TB_FIREBIRD_PASS", DEFAULT_FB_PASS), help="Firebird password")
+    parser.add_argument("--isql", default=os.getenv("TB_ISQL_PATH"), help="Path to Firebird isql executable")
     return parser.parse_args()
+
+
+def apply_runtime(args: argparse.Namespace) -> None:
+    runtime = {
+        "tbbackup": normalize_backup_path(args.tbbackup),
+        "fb_host": args.fb_host,
+        "fb_user": args.fb_user,
+        "fb_pass": args.fb_pass,
+        "isql": resolve_isql_path(args.isql),
+    }
+    runtime["fb_dsn"] = build_firebird_dsn(runtime["fb_host"], runtime["tbbackup"])
+    RUNTIME.update(runtime)
+
+
+def preflight_diagnostics(target_db: Path) -> bool:
+    print("Preflight diagnostics:")
+    print(f"  ROOT: {ROOT}")
+    print(f"  TBBACKUP: {RUNTIME['tbbackup']}")
+    print(f"  Firebird host: {RUNTIME['fb_host']}")
+    print(f"  Firebird DSN: {RUNTIME['fb_dsn']}")
+    print(f"  isql path: {RUNTIME['isql']}")
+    print(f"  Target DB: {target_db}")
+
+    errors: list[str] = []
+    if not Path(RUNTIME["tbbackup"]).exists():
+        errors.append(f"Missing Firebird input file: {RUNTIME['tbbackup']}")
+    if not Path(RUNTIME["isql"]).exists():
+        errors.append(f"Missing isql executable: {RUNTIME['isql']} (set TB_ISQL_PATH or --isql)")
+    if not Path(target_db).exists():
+        errors.append(f"Missing target SQLite database: {target_db}")
+
+    if errors:
+        print("Preflight failed:")
+        for err in errors:
+            print(f"  - {err}")
+        return False
+    return True
 
 
 def run_isql(sql: str, timeout: int = 120) -> str:
     result = subprocess.run(
-        [ISQL, FB_DSN, "-user", FB_USER, "-password", FB_PASS, "-q"],
+        [str(RUNTIME["isql"]), RUNTIME["fb_dsn"], "-user", RUNTIME["fb_user"], "-password", RUNTIME["fb_pass"], "-q"],
         input=sql.encode("latin-1"),
         capture_output=True,
         timeout=timeout,
@@ -345,8 +405,23 @@ def build_profile_queries(table: str, column: str, kind: str) -> tuple[str, str]
     return sqlite_sql, firebird_sql
 
 
+def get_source_tables() -> list[str]:
+    out = run_isql(
+        "SELECT TRIM(RDB$RELATION_NAME) FROM RDB$RELATIONS "
+        "WHERE RDB$SYSTEM_FLAG = 0 AND RDB$VIEW_BLR IS NULL "
+        "ORDER BY 1;"
+    )
+    tables = []
+    for raw_line in out.splitlines():
+        line = raw_line.strip()
+        if not line or line == "TRIM" or line.startswith("=") or line.startswith("Database") or line.startswith("SQL>"):
+            continue
+        tables.append(line)
+    return sorted(tables)
+
+
 def compare_table_counts(con: sqlite3.Connection) -> CheckResult:
-    source_tables = sorted(get_tables())
+    source_tables = get_source_tables()
     target_tables = sorted(
         row[0]
         for row in con.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -378,7 +453,7 @@ def compare_table_counts(con: sqlite3.Connection) -> CheckResult:
             "blocking_endpoints": BLOCKING_ENDPOINTS,
             "informational_endpoints": INFORMATIONAL_ENDPOINTS,
             "canonical_inputs": {
-                "firebird_dsn": FB_DSN,
+                "firebird_dsn": RUNTIME["fb_dsn"],
                 "sqlite_target": str(con.execute("PRAGMA database_list").fetchone()[2]),
             },
             "classification": {
@@ -566,8 +641,8 @@ def validate(target_db: Path, accepted_db: Path, report_path: Path) -> int:
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
         "source": {
-            "firebird_dsn": FB_DSN,
-            "isql": ISQL,
+            "firebird_dsn": RUNTIME["fb_dsn"],
+            "isql": str(RUNTIME["isql"]),
         },
         "target": {
             "candidate_db": str(target_db),
@@ -577,7 +652,7 @@ def validate(target_db: Path, accepted_db: Path, report_path: Path) -> int:
             "blocking_endpoints": BLOCKING_ENDPOINTS,
             "informational_endpoints": INFORMATIONAL_ENDPOINTS,
             "canonical_inputs": {
-                "source_database": FB_DSN,
+                "source_database": RUNTIME["fb_dsn"],
                 "sqlite_candidate": str(target_db),
                 "sqlite_accepted": str(accepted_db),
             },
@@ -592,9 +667,14 @@ def validate(target_db: Path, accepted_db: Path, report_path: Path) -> int:
 
 def main() -> int:
     args = parse_args()
+    apply_runtime(args)
     target_db = Path(args.target_db)
     accepted_db = Path(args.accepted_db)
     report_path = Path(args.report) if args.report else default_report_path()
+
+    if not preflight_diagnostics(target_db):
+        return 2
+
     return validate(target_db, accepted_db, report_path)
 
 

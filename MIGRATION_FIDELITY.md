@@ -27,10 +27,12 @@ Informational-only checks currently cover leaderboard-style statistics where tie
 
 Every validation run uses the same source-of-truth inputs:
 
-- Firebird source: `localhost:C:/SAPDevelop/tb/TB6DATENBANK.FDB`
+- Firebird source: built from `TB_FIREBIRD_HOST` + `TBBACKUP` (defaults to `localhost` + repository-local `TB6DATENBANK.FDB`)
 - Candidate SQLite output: `TB6.sqlite.candidate`
 - Accepted SQLite output: `TB6.sqlite`
 - Audit reports: `validation_reports/latest.json` and timestamped JSON snapshots in `validation_reports/`
+
+Related setup contract: see [SETUP.md](SETUP.md).
 
 ## Check Classification
 
@@ -63,6 +65,12 @@ Run a full migration with gated promotion:
 
 ```powershell
 python migrate_to_sqlite.py
+```
+
+Override Firebird input explicitly:
+
+```powershell
+python migrate_to_sqlite.py --tbbackup ./TB6DATENBANK.FDB
 ```
 
 On success, the candidate database replaces `TB6.sqlite` and the previous accepted file is moved to `TB6.sqlite.previous`.

@@ -12,6 +12,10 @@ The system MUST define a migration fidelity baseline that classifies validation 
 - **WHEN** a migrated SQLite dataset is produced from the canonical Firebird source
 - **THEN** the dataset MUST be accepted only if all blocking fidelity checks pass
 
+#### Scenario: Cross-platform validation entry point
+- **WHEN** fidelity validation is executed via the documented canonical command on a supported operating system
+- **THEN** the validation workflow MUST resolve required paths and produce an equivalent PASS/FAIL decision for the same dataset state
+
 ### Requirement: Entity Integrity Parity
 The system MUST verify parity for critical entities used by read workflows, including presence of primary records and consistency of key relationships across Gebiete, Gipfel, Wege, and Begehungen.
 
@@ -39,6 +43,10 @@ The system MUST produce a repeatable validation report that records gate results
 #### Scenario: Auditable report generation
 - **WHEN** fidelity validation completes
 - **THEN** a structured report MUST be generated with explicit PASS/FAIL state and mismatch details per check
+
+#### Scenario: Platform-neutral report location
+- **WHEN** validation is run on any supported operating system
+- **THEN** report output paths and file naming behavior MUST follow repository-relative conventions documented by the setup contract
 
 ### Requirement: Non-goal Protection
 The baseline validation capability MUST NOT require UI behavior changes, API feature expansion, or schema redesign as a prerequisite for adoption.

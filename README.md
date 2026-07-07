@@ -15,9 +15,14 @@ Reference source page:
 
 - Clone the tblight git repository to your machine
 - Unzip the TB6DATENBANK.FDB file from your latest Tourenbuch VI backup into the root folder of tblight
-- Run `python migrate_to_sqlite.py` to create the TB6.sqlite database
+- Optionally set `TBBACKUP` and `TB_ISQL_PATH` if defaults do not match your environment
+- Run `python migrate_to_sqlite.py` to create and validate the SQLite database
 - Run `python app.py` to start the local backend server
 - Open your browser on the localhost URL
+
+## Cross-Platform Setup
+
+For environment variables, compatibility notes, and canonical commands on Windows/macOS/Linux, see [SETUP.md](SETUP.md).
 
 ## Important Notice
 
