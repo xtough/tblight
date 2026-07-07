@@ -3,19 +3,32 @@ Migrate Tourenbuch 6 Firebird 2.1 database to SQLite.
 Uses isql.exe (FB 2.1) to extract data since Python FB drivers require FB 3+.
 """
 
+import argparse
+from pathlib import Path
 import sqlite3
 import subprocess
-import csv
-import io
-import os
 import re
 import sys
 
-ISQL      = r'C:/Program Files/Firebird/Firebird_2_1/bin/isql.exe'
-FB_DSN    = r'localhost:C:/SAPDevelop/tb/TB6DATENBANK.FDB'
-FB_USER   = 'SYSDBA'
-FB_PASS   = 'masterkey'
-SQLITE_DB = r'C:/SAPDevelop/tb/TB6.sqlite'
+ROOT = Path(__file__).parent
+
+ISQL = r'C:/Program Files/Firebird/Firebird_2_1/bin/isql.exe'
+FB_DSN = r'localhost:C:/SAPDevelop/tb/TB6DATENBANK.FDB'
+FB_USER = 'SYSDBA'
+FB_PASS = 'masterkey'
+SQLITE_DB = ROOT / 'TB6.sqlite'
+SQLITE_CANDIDATE_DB = ROOT / 'TB6.sqlite.candidate'
+VALIDATION_SCRIPT = ROOT / 'validate_migration_fidelity.py'
+ER_DIAGRAM_PATH = ROOT / 'ER_diagram.md'
+FIELD_SEPARATOR = chr(31)
+RECORD_SEPARATOR = chr(30)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--accepted-db', default=str(SQLITE_DB), help='Accepted SQLite database path')
+    parser.add_argument('--candidate-db', default=str(SQLITE_CANDIDATE_DB), help='Candidate SQLite database path written before validation')
+    return parser.parse_args()
 
 
 def isql(sql):
@@ -29,6 +42,11 @@ def isql(sql):
     return result.stdout.decode('latin-1', errors='replace')
 
 
+def clean_isql_output(raw):
+    raw = re.sub(r'^Database:.*?(\r?\n)', '', raw)
+    return raw.replace('SQL> ', '')
+
+
 def get_tables():
     out = isql("SELECT TRIM(RDB$RELATION_NAME) FROM RDB$RELATIONS "
                "WHERE RDB$SYSTEM_FLAG = 0 AND RDB$VIEW_BLR IS NULL "
@@ -36,7 +54,13 @@ def get_tables():
     tables = []
     for line in out.splitlines():
         line = line.strip()
-        if line and line.upper() not in ('', 'TRIM') and not line.startswith('=') and not line.startswith('Database'):
+        if (
+            line
+            and line.upper() not in ('', 'TRIM')
+            and not line.startswith('=')
+            and not line.startswith('Database')
+            and not line.startswith('SQL>')
+        ):
             tables.append(line)
     return tables
 
@@ -136,12 +160,43 @@ def get_row_count(table):
     return 0
 
 
-def migrate():
+def build_export_select(columns):
+    cast_cols = []
+    for name, ftype, sub, scale in columns:
+        if ftype == 261:  # BLOB
+            cast_expr = f'CAST("{name}" AS VARCHAR(32000))'
+        elif ftype in (12, 35):  # DATE, TIMESTAMP
+            cast_expr = f'CAST("{name}" AS VARCHAR(30))'
+        elif ftype == 13:  # TIME
+            cast_expr = f'CAST("{name}" AS VARCHAR(20))'
+        else:
+            cast_expr = f'CAST("{name}" AS VARCHAR(500))'
+        cast_cols.append(f"COALESCE({cast_expr}, '<null>')")
+    return ' || ASCII_CHAR(31) || '.join(cast_cols) + ' || ASCII_CHAR(30)'
+
+
+def export_table_records(table, columns):
+    sql = f'SET HEADING OFF;\nSELECT {build_export_select(columns)} FROM "{table}";\n'
+    result = subprocess.run(
+        [ISQL, FB_DSN, '-user', FB_USER, '-password', FB_PASS, '-q'],
+        input=sql.encode('latin-1'),
+        capture_output=True,
+        timeout=300,
+    )
+    raw = clean_isql_output(result.stdout.decode('latin-1', errors='replace'))
+    for record in raw.split(RECORD_SEPARATOR):
+        if not record.strip():
+            continue
+        yield record.split(FIELD_SEPARATOR)
+
+
+def migrate(sqlite_db):
     print(f"Getting table list...")
     tables = get_tables()
     print(f"Found {len(tables)} tables\n")
 
-    sq = sqlite3.connect(SQLITE_DB)
+    sqlite_db = Path(sqlite_db)
+    sq = sqlite3.connect(sqlite_db)
     sq.execute("PRAGMA journal_mode=WAL")
     sq.execute("PRAGMA foreign_keys=OFF")
 
@@ -163,45 +218,12 @@ def migrate():
             sq.commit()
             continue
 
-        # Export via isql using column-by-column SELECT with separators
-        # Build a SELECT that produces delimited output
-        # Use || '|~|' || as delimiter unlikely to appear in data
-        sep = '|~|'
-        cast_cols = []
-        for name, ftype, sub, scale in columns:
-            if ftype == 261:  # BLOB
-                c = f'CAST("{name}" AS VARCHAR(32000))'
-            elif ftype in (12, 35):  # DATE, TIMESTAMP
-                c = f'CAST("{name}" AS VARCHAR(30))'
-            elif ftype == 13:  # TIME
-                c = f'CAST("{name}" AS VARCHAR(20))'
-            else:
-                c = f'CAST("{name}" AS VARCHAR(500))'
-            # Wrap in COALESCE so NULL becomes the literal string '<null>'
-            cast_cols.append(f"COALESCE({c}, '<null>')")
-
-        select_expr = f" || '{sep}' || ".join(cast_cols)
-        sql = f'SET HEADING OFF;\nSELECT {select_expr} FROM "{table}";\n'
-
-        result = subprocess.run(
-            [ISQL, FB_DSN, '-user', FB_USER, '-password', FB_PASS, '-q'],
-            input=sql.encode('latin-1'),
-            capture_output=True,
-            timeout=300,
-        )
-        raw = result.stdout.decode('latin-1', errors='replace')
-
         rows_inserted = 0
         placeholders = ', '.join('?' * len(col_names))
         quoted_cols = ', '.join(f'"{c}"' for c in col_names)
         insert_sql = f'INSERT INTO "{table}" ({quoted_cols}) VALUES ({placeholders})'
 
-        for line in raw.splitlines():
-            line = line.rstrip('\r\n')
-            # Skip isql header/footer lines
-            if not line.strip() or line.startswith('Database:') or line.startswith('SQL>'):
-                continue
-            parts = line.split(sep)
+        for parts in export_table_records(table, columns):
             if len(parts) != len(col_names):
                 continue
             row = []
@@ -234,12 +256,14 @@ def migrate():
         sq.commit()
         print(f"  {table}: {rows_inserted}/{row_count} rows")
 
+    sq.execute("PRAGMA wal_checkpoint(FULL)")
+    sq.execute("PRAGMA journal_mode=DELETE")
     sq.close()
-    print(f"\nSQLite database written to: {SQLITE_DB}")
+    print(f"\nSQLite database written to: {sqlite_db}")
     return tables
 
 
-def generate_er_diagram(tables):
+def generate_er_diagram(tables, output_path=ER_DIAGRAM_PATH):
     print("\nFetching foreign keys for ER diagram...")
     fks = get_foreign_keys()
 
@@ -271,17 +295,71 @@ def generate_er_diagram(tables):
 
     diagram = '\n'.join(lines)
 
-    with open('C:/SAPDevelop/tb/ER_diagram.md', 'w', encoding='utf-8') as f:
+    output_path = Path(output_path)
+    with output_path.open('w', encoding='utf-8') as f:
         f.write('```mermaid\n')
         f.write(diagram)
         f.write('\n```\n')
 
-    print(f"ER diagram written to: C:/SAPDevelop/tb/ER_diagram.md")
+    print(f"ER diagram written to: {output_path}")
     return diagram
 
 
+def cleanup_sidecars(sqlite_db):
+    sqlite_db = Path(sqlite_db)
+    for suffix in ('-wal', '-shm'):
+        sidecar = Path(str(sqlite_db) + suffix)
+        if sidecar.exists():
+            sidecar.unlink()
+
+
+def run_validation(candidate_db, accepted_db):
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(VALIDATION_SCRIPT),
+            '--target-db',
+            str(candidate_db),
+            '--accepted-db',
+            str(accepted_db),
+        ],
+        check=False,
+    )
+    return result.returncode
+
+
+def promote_candidate(candidate_db, accepted_db):
+    candidate_db = Path(candidate_db)
+    accepted_db = Path(accepted_db)
+    previous_db = Path(str(accepted_db) + '.previous')
+
+    cleanup_sidecars(candidate_db)
+    cleanup_sidecars(accepted_db)
+
+    if previous_db.exists():
+        previous_db.unlink()
+
+    if accepted_db.exists():
+        accepted_db.replace(previous_db)
+
+    candidate_db.replace(accepted_db)
+    print(f"Promoted validated SQLite database to: {accepted_db}")
+
+
 if __name__ == '__main__':
-    tables = migrate()
+    args = parse_args()
+    accepted_db = Path(args.accepted_db)
+    candidate_db = Path(args.candidate_db)
+
+    tables = migrate(candidate_db)
     diagram = generate_er_diagram(tables)
     print("\n--- ER Diagram (Mermaid) ---")
     print(diagram)
+
+    validation_code = run_validation(candidate_db, accepted_db)
+    if validation_code != 0:
+        print(f"\nMigration fidelity validation failed. Candidate database kept at: {candidate_db}")
+        print(f"Accepted SQLite database remains unchanged at: {accepted_db}")
+        raise SystemExit(validation_code)
+
+    promote_candidate(candidate_db, accepted_db)
