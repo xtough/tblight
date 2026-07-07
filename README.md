@@ -11,6 +11,14 @@ Reference source page:
 - Read-only API and web UI for exploration and analysis
 - Migration fidelity validation and promotion gate
 
+## Usage
+
+- Clone the tblight git repository to your machine
+- Unzip the TB6DATENBANK.FDB file from your latest Tourenbuch VI backup into the root folder of tblight
+- Run `python migrate_to_sqlite.py` to create the TB6.sqlite database
+- Run `python app.py` to start the local backend server
+- Open your browser on the localhost URL
+
 ## Important Notice
 
 This project is an independent reconstruction effort for compatibility, preservation, and interoperability purposes.
