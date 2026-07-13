@@ -15,6 +15,12 @@ Reference source page:
 
 - Clone the tblight git repository to your machine
 - Unzip the TB6DATENBANK.FDB file from your latest Tourenbuch VI backup into the root folder of tblight
+- Create the local Python environment named `tb` and install dependencies:
+	- PowerShell: `./scripts/setup_env.ps1`
+	- bash/zsh: `./scripts/setup_env.sh`
+- Activate the environment:
+	- PowerShell: `.\\tb\\Scripts\\Activate.ps1`
+	- bash/zsh: `source tb/bin/activate`
 - Optionally set `TBBACKUP` and `TB_ISQL_PATH` if defaults do not match your environment
 - Run `python migrate_to_sqlite.py` to create and validate the SQLite database
 - Run `python app.py` to start the local backend server

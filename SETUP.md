@@ -12,6 +12,27 @@ This project supports development and migration workflows on:
 - Firebird 2.1 `isql` client
 - Firebird database backup/input file (`TB6DATENBANK.FDB` by default)
 
+## Python Environment and Dependencies
+
+Create the local project environment named `tb` and install dependencies.
+
+### PowerShell
+
+```powershell
+./scripts/setup_env.ps1
+.\\tb\\Scripts\\Activate.ps1
+```
+
+### bash/zsh
+
+```bash
+./scripts/setup_env.sh
+source tb/bin/activate
+```
+
+The setup script installs dependencies from `requirements.txt` when present.
+If `requirements.txt` is missing, it installs runtime modules and creates the file.
+
 ## Canonical Environment Variables
 
 - `TBBACKUP`: path to Firebird input database/backup file
@@ -42,6 +63,12 @@ python validate_migration_fidelity.py
 
 ```bash
 python migrate_to_sqlite.py --tbbackup ./TB6DATENBANK.FDB
+```
+
+### 4. Run local backend API
+
+```bash
+python app.py
 ```
 
 ## Shell Examples
@@ -108,3 +135,15 @@ When scripts or dependencies change:
 2. Keep preflight diagnostics aligned with required dependencies.
 3. Re-run manual cross-platform verification checklist.
 4. Update `MIGRATION_FIDELITY.md` when validation behavior or report contracts change.
+
+## Dependency Manifest Maintenance
+
+After changing Python runtime dependencies:
+
+1. Activate the `tb` environment.
+2. Install/update packages.
+3. Regenerate `requirements.txt` with:
+
+```bash
+python -m pip freeze > requirements.txt
+```
