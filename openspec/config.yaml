@@ -1,20 +1,34 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Project: Unofficial reverse-engineering of Tourenbuch VI (2012), a German rock climbing
+  logbook application by Iven Eissner (http://www.gipfelbuch.de/tourenbuch/).
+  Goal: read-only web viewer backed by SQLite data migrated from the original Firebird database.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack: Python, FastAPI, sqlite3, Vanilla HTML/CSS/JS
+  Source database: Firebird 2.1 (TB6DATENBANK.FDB, charset ISO8859_1)
+  Runtime database: SQLite (TB6.sqlite)
+  Python venv: tb/ (cross-platform) or .venv/
+
+  Architectural constraint: read-only application — no write endpoints, no schema migrations.
+  Fidelity gate: candidate SQLite must pass validate_migration_fidelity.py before promotion to TB6.sqlite.
+
+  Domain glossary:
+  - Gebiet / Gebiete: climbing area(s)
+  - Gipfel: summit / rock feature
+  - Weg / Wege: route(s)
+  - Begehung / Begehungen: ascent(s)
+  - Seilschaft: rope team (participants of an ascent)
+  - GRDX: numeric grade index (maps to GRDR: human-readable grade string)
+  - Region: geographic region grouping areas
+  - Gestein: rock type
+
+rules:
+  specs:
+    - Requirements must describe observable behavior, not implementation details
+    - Put internal mechanisms in design.md unless the mechanism is itself part of the user-facing contract
+    - Read-only constraint applies to all capabilities; do not specify write behavior
+  tasks:
+    - Keep tasks scoped to a single logical change
+  design:
+    - Document rationale for any deviation from the read-only or fidelity-gate constraints
