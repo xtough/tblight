@@ -12,6 +12,7 @@ context: |
 
   Architectural constraint: read-only application — no write endpoints, no schema migrations.
   Fidelity gate: candidate SQLite must pass validate_migration_fidelity.py before promotion to TB6.sqlite.
+  Firebird tooling constraint: all Firebird tools (gbak, isql) must be version 2.1. The TB6 database format was created with Firebird 2.1; later versions use incompatible formats. Do not use or recommend Firebird 3, 4, or 5 tools.
 
   Domain glossary:
   - Gebiet / Gebiete: climbing area(s)
@@ -32,3 +33,4 @@ rules:
     - Keep tasks scoped to a single logical change
   design:
     - Document rationale for any deviation from the read-only or fidelity-gate constraints
+    - Never propose Firebird tools other than version 2.1

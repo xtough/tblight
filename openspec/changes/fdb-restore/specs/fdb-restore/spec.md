@@ -39,7 +39,7 @@ The script SHALL extract the `.fbk` file from the selected ZIP archive and resto
 
 #### Scenario: Successful restore
 - **WHEN** a valid `TB*.fbk.zip` is selected and `gbak` is available
-- **THEN** the script SHALL extract the `.fbk` to a temporary file, invoke `gbak -c -v -fix_fss_metadata ISO8859_1`, restore to `TB6DATENBANK.FDB`, clean up the temp file, and exit with status 0
+- **THEN** the script SHALL extract the `.fbk` to a temporary file, invoke `gbak -rep -v`, restore to `TB6DATENBANK.FDB`, clean up the temp file, and exit with status 0
 
 #### Scenario: gbak not found on PATH
 - **WHEN** `gbak` is not found on the system PATH

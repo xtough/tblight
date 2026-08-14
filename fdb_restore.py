@@ -1,7 +1,7 @@
 """
 Restore a Tourenbuch 6 Firebird backup archive to TB6DATENBANK.FDB.
 
-Requires Firebird 2.1 gbak on PATH.
+Requires Firebird 2.1 gbak on PATH (set TB_GBAK_PATH to override).
 """
 
 import argparse
@@ -20,12 +20,18 @@ DB_NAME = "TB6DATENBANK.FDB"
 BACKUP_PATTERN = "TB*.fbk.zip"
 
 
-def check_gbak():
-    if shutil.which("gbak") is None:
-        sys.exit(
-            "Error: gbak not found on PATH.\n"
-            "Install Firebird 2.1 and add its bin/ directory to PATH."
-        )
+def resolve_gbak() -> str:
+    env = os.environ.get("TB_GBAK_PATH")
+    if env:
+        return env
+    found = shutil.which("gbak")
+    if found:
+        return found
+    sys.exit(
+        "Error: gbak not found.\n"
+        "Install Firebird 2.1 and add its bin/ directory to PATH, "
+        "or set TB_GBAK_PATH to the gbak executable."
+    )
 
 
 def resolve_password() -> str:
@@ -60,9 +66,9 @@ def select_backup_file(files: list) -> Path:
 
 # ── Pre-restore backup ───────────────────────────────────────────────────────
 
-def run_gbak_backup(db_path: Path, out_path: Path, password: str):
+def run_gbak_backup(db_path: Path, out_path: Path, password: str, gbak: str):
     result = subprocess.run(
-        ["gbak", "-b", "-v", str(db_path), str(out_path),
+        [gbak, "-b", "-v", str(db_path), str(out_path),
          "-user", "SYSDBA", "-password", password],
         capture_output=True, text=True,
     )
@@ -73,7 +79,7 @@ def run_gbak_backup(db_path: Path, out_path: Path, password: str):
     print(f"Backup written to: {out_path.name}")
 
 
-def offer_backup(db_path: Path, password: str):
+def offer_backup(db_path: Path, password: str, gbak: str):
     if not db_path.exists():
         return
     answer = input(
@@ -82,7 +88,7 @@ def offer_backup(db_path: Path, password: str):
     if answer in ("", "y", "yes"):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_path = db_path.parent / f"{timestamp}_TB6DATENBANK.fbk"
-        run_gbak_backup(db_path, out_path, password)
+        run_gbak_backup(db_path, out_path, password, gbak)
 
 
 # ── Restore ──────────────────────────────────────────────────────────────────
@@ -101,11 +107,9 @@ def extract_fbk(zip_path: Path) -> Path:
     return Path(tmp.name)
 
 
-def run_gbak_restore(fbk_path: Path, db_path: Path, password: str):
+def run_gbak_restore(fbk_path: Path, db_path: Path, password: str, gbak: str):
     result = subprocess.run(
-        ["gbak", "-c", "-v",
-         "-fix_fss_metadata", "ISO8859_1",
-         "-fix_fss_data", "ISO8859_1",
+        [gbak, "-rep", "-v",
          str(fbk_path), f"localhost:{db_path}",
          "-user", "SYSDBA", "-password", password],
         capture_output=True, text=True,
@@ -131,19 +135,18 @@ def main():
     )
     args = parser.parse_args()
 
-    check_gbak()
-
+    gbak = resolve_gbak()
     cwd = Path.cwd()
     db_path = cwd / DB_NAME
 
     zip_path = Path(args.file) if args.file else select_backup_file(find_backup_files(cwd))
 
     password = resolve_password()
-    offer_backup(db_path, password)
+    offer_backup(db_path, password, gbak)
 
     fbk_path = extract_fbk(zip_path)
     try:
-        run_gbak_restore(fbk_path, db_path, password)
+        run_gbak_restore(fbk_path, db_path, password, gbak)
     finally:
         fbk_path.unlink(missing_ok=True)
 

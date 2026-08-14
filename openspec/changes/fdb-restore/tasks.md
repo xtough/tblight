@@ -19,7 +19,7 @@
 ## 4. Restore
 
 - [x] 4.1 Implement `extract_fbk(zip_path)` to unzip the `.fbk` to a `tempfile.NamedTemporaryFile`
-- [x] 4.2 Implement `run_gbak_restore(fbk_path, db_path, password)` invoking `gbak -c -v -fix_fss_metadata ISO8859_1`
+- [x] 4.2 Fix `run_gbak_restore` to use `gbak -rep -v` instead of `-c`; remove `-fix_fss_metadata`/`-fix_fss_data` flags (Firebird 5-only, not present in Firebird 2.1)
 - [x] 4.3 Ensure temp file is deleted in a `finally` block regardless of restore outcome
 - [x] 4.4 Surface gbak stderr/stdout on failure and exit non-zero
 

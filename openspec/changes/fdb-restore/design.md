@@ -27,11 +27,13 @@ The project uses Python and has a platform-independent setup. Python's `zipfile`
 **Alternative considered**: Bash script — rejected because it is not cross-platform (Windows requires WSL or Cygwin).
 
 ### gbak invocation via subprocess
-Use `subprocess.run` with a constructed argument list. The exact restore command is:
+Use `subprocess.run` with a constructed argument list. The restore command is:
 ```
-gbak -c -v -fix_fss_metadata ISO8859_1 <source.fbk> <host:DB_PATH> -user SYSDBA -password <pw>
+gbak -rep -v <source.fbk> <host:DB_PATH> -user SYSDBA -password <pw>
 ```
-The `-fix_fss_metadata ISO8859_1` flag is required for TB6 archives (FSS metadata stored as ISO8859_1).
+`-rep` (replace) is used instead of `-c` (create) so the command succeeds whether or not `TB6DATENBANK.FDB` already exists. The pre-restore backup offer already gives the user the opportunity to save the existing database before it is overwritten.
+
+Note: `-fix_fss_metadata` and `-fix_fss_data` are Firebird 5-only flags and must not be used — this project requires Firebird 2.1 tools exclusively.
 
 **SYSDBA credentials**: Prompt interactively using `getpass` if not provided via `ISQL_PASSWORD` / `ISC_PASSWORD` environment variables, which is the Firebird convention.
 
