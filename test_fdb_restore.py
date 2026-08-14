@@ -81,6 +81,27 @@ def test_extract_fbk_no_fbk_inside_exits(tmp_path):
         fdb_restore.extract_fbk(zip_path)
 
 
+# ── patch_fbk ────────────────────────────────────────────────────────────────
+
+def test_patch_fbk_replaces_needle(tmp_path):
+    NEEDLE = b"\x00\x00\x2b\x04\xff\xff\xff\xff"
+    PATCH  = b"\x00\x00\x2b\x04\x00\x00\x00\x00"
+    fbk = tmp_path / "test.fbk"
+    fbk.write_bytes(b"header" + NEEDLE + b"middle" + NEEDLE + b"end")
+    count = fdb_restore.patch_fbk(fbk)
+    assert count == 2
+    assert fbk.read_bytes() == b"header" + PATCH + b"middle" + PATCH + b"end"
+
+
+def test_patch_fbk_no_match_leaves_file_unchanged(tmp_path):
+    fbk = tmp_path / "test.fbk"
+    original = b"no needle here"
+    fbk.write_bytes(original)
+    count = fdb_restore.patch_fbk(fbk)
+    assert count == 0
+    assert fbk.read_bytes() == original
+
+
 # ── 5.4 resolve_password ─────────────────────────────────────────────────────
 
 def test_resolve_password_isc(monkeypatch):

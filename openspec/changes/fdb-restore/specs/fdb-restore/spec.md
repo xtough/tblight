@@ -39,7 +39,9 @@ The script SHALL extract the `.fbk` file from the selected ZIP archive and resto
 
 #### Scenario: Successful restore
 - **WHEN** a valid `TB*.fbk.zip` is selected and `gbak` is available
-- **THEN** the script SHALL extract the `.fbk` to a temporary file, invoke `gbak -rep -v`, restore to `TB6DATENBANK.FDB`, clean up the temp file, and exit with status 0
+- **THEN** the script SHALL extract the `.fbk` to a temporary file, patch the FSS character set subtype metadata in the temp file, invoke `gbak -rep -v`, restore to `TB6DATENBANK.FDB`, clean up the temp file, and exit with status 0
+
+The FSS patch SHALL replace all occurrences of the byte pattern `\x00\x00\x2b\x04\xff\xff\xff\xff` with `\x00\x00\x2b\x04\x00\x00\x00\x00` in the extracted `.fbk` before passing it to gbak.
 
 #### Scenario: gbak not found on PATH
 - **WHEN** `gbak` is not found on the system PATH

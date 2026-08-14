@@ -26,6 +26,12 @@ The project uses Python and has a platform-independent setup. Python's `zipfile`
 
 **Alternative considered**: Bash script — rejected because it is not cross-platform (Windows requires WSL or Cygwin).
 
+### FSS character set subtype patch
+
+TB6 backup archives contain FSS character set subtype fields set to `0xffffffff` (invalid). Firebird 2.1's gbak rejects these with "Implementation of text subtype N not located." The fix is a targeted binary patch of the extracted `.fbk` before restore: replace every occurrence of the 8-byte sequence `\x00\x00\x2b\x04\xff\xff\xff\xff` with `\x00\x00\x2b\x04\x00\x00\x00\x00`, zeroing the 4-byte subtype value. This was verified empirically — the two patched locations are the only binary differences between the original backup and the version that restored successfully.
+
+**Alternative considered**: Firebird 5's gbak with `-fix_fss_metadata`/`-fix_fss_data` — rejected because this project requires Firebird 2.1 tools exclusively.
+
 ### gbak invocation via subprocess
 Use `subprocess.run` with a constructed argument list. The restore command is:
 ```

@@ -19,6 +19,7 @@
 ## 4. Restore
 
 - [x] 4.1 Implement `extract_fbk(zip_path)` to unzip the `.fbk` to a `tempfile.NamedTemporaryFile`
+- [x] 4.1b Implement `patch_fbk(path)` that replaces all occurrences of `\x00\x00\x2b\x04\xff\xff\xff\xff` with `\x00\x00\x2b\x04\x00\x00\x00\x00` in the `.fbk` file in place, and reports the patch count; call it on the temp file after extraction
 - [x] 4.2 Fix `run_gbak_restore` to use `gbak -rep -v` instead of `-c`; remove `-fix_fss_metadata`/`-fix_fss_data` flags (Firebird 5-only, not present in Firebird 2.1)
 - [x] 4.3 Ensure temp file is deleted in a `finally` block regardless of restore outcome
 - [x] 4.4 Surface gbak stderr/stdout on failure and exit non-zero

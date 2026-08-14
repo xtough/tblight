@@ -107,6 +107,17 @@ def extract_fbk(zip_path: Path) -> Path:
     return Path(tmp.name)
 
 
+def patch_fbk(path: Path) -> int:
+    NEEDLE = b"\x00\x00\x2b\x04\xff\xff\xff\xff"
+    PATCH  = b"\x00\x00\x2b\x04\x00\x00\x00\x00"
+    data = path.read_bytes()
+    patched, count = data.replace(NEEDLE, PATCH), data.count(NEEDLE)
+    if count:
+        path.write_bytes(patched)
+        print(f"FSS patch applied ({count} location{'s' if count != 1 else ''}).")
+    return count
+
+
 def run_gbak_restore(fbk_path: Path, db_path: Path, password: str, gbak: str):
     result = subprocess.run(
         [gbak, "-rep", "-v",
@@ -145,6 +156,7 @@ def main():
     offer_backup(db_path, password, gbak)
 
     fbk_path = extract_fbk(zip_path)
+    patch_fbk(fbk_path)
     try:
         run_gbak_restore(fbk_path, db_path, password, gbak)
     finally:
