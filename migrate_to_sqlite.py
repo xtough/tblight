@@ -534,7 +534,8 @@ def compare_sqlite_delta(candidate_path, accepted_path):
             acc_total = acc_con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
 
             if cand_total > _ROW_DIFF_CAP or acc_total > _ROW_DIFF_CAP:
-                delta['skipped_large_tables'].append(table)
+                if not any(table.startswith(p) for p in ('IMPORT_', 'TMP_', 'SPELL_', 'DB_')):
+                    delta['skipped_large_tables'].append(table)
                 continue
 
             cand_cur = cand_con.execute(f'SELECT * FROM "{table}"')
@@ -633,7 +634,7 @@ def format_delta_report(delta):
                 print(f"  BEGEHUNGEN #{anomaly['pk']}  DATUM={anomaly['DATUM']}  (accepted max: {anomaly['accepted_max_datum']})")
 
     if delta['skipped_large_tables']:
-        print(f"\nRow-level diff skipped (table too large): {', '.join(delta['skipped_large_tables'])}")
+        print(f"\nModified-record check skipped (>500 rows): {', '.join(delta['skipped_large_tables'])}")
 
     print()
 
