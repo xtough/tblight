@@ -4,6 +4,7 @@ TB6.sqlite.candidate
 TB6.sqlite.previous
 tb_strings.txt
 TB Sicherung*
+*.fbk
 *.txt
 validation_reports/
 .claude
