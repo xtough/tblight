@@ -43,14 +43,34 @@ SYSDBA password is read from `ISC_PASSWORD` or `ISQL_PASSWORD` env vars, or prom
 - Activate the environment:
 	- PowerShell: `.\\tb\\Scripts\\Activate.ps1`
 	- bash/zsh: `source tb/bin/activate`
-- Optionally set `TBBACKUP` and `TB_ISQL_PATH` if defaults do not match your environment
-- Run `python migrate_to_sqlite.py` to create and validate the SQLite database
-- Run `python app.py` to start the local backend server
+- Optionally set environment variables if defaults do not match your environment:
+  - `TBBACKUP` — path to Firebird input file (default: `TB6DATENBANK.FDB` in repo root)
+  - `TB_FIREBIRD_HOST` — Firebird host (default: `localhost`)
+  - `TB_FIREBIRD_USER` — Firebird user (default: `SYSDBA`)
+  - `TB_FIREBIRD_PASS` — Firebird password (default: `masterkey`)
+  - `TB_ISQL_PATH` — explicit path to `isql` executable (default: resolved from PATH)
+- Run `py migrate_to_sqlite.py` to migrate Firebird → SQLite and promote to `TB6.sqlite`
+- Run `py app.py` to start the local backend server
 - Open your browser on the localhost URL
+
+### Migration Promotion
+
+`migrate_to_sqlite.py` produces a candidate at `TB6.sqlite.candidate` and runs the
+fidelity gate before promotion. On success:
+
+- `TB6.sqlite.candidate` → `TB6.sqlite` (new accepted database)
+- Previous `TB6.sqlite` → `TB6.sqlite.previous` (rollback artefact)
+
+If validation fails, `TB6.sqlite` is left untouched and the candidate remains at
+`TB6.sqlite.candidate` for diagnosis.
+
+`validate_migration_fidelity.py` can also be run standalone to re-validate an
+already-accepted `TB6.sqlite` without running a new migration.
 
 ## Cross-Platform Setup
 
 For environment variables, compatibility notes, and canonical commands on Windows/macOS/Linux, see [SETUP.md](SETUP.md).
+For the fidelity gate, check classification, and validation report format, see [MIGRATION_FIDELITY.md](MIGRATION_FIDELITY.md).
 
 ## Important Notice
 

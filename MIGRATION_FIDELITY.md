@@ -55,22 +55,28 @@ Rationale:
 
 ## Commands
 
+Restore a Firebird backup before running migration (step 0):
+
+```bash
+py fdb_restore.py
+```
+
 Run the validator against the accepted database:
 
-```powershell
-python validate_migration_fidelity.py
+```bash
+py validate_migration_fidelity.py
 ```
 
 Run a full migration with gated promotion:
 
-```powershell
-python migrate_to_sqlite.py
+```bash
+py migrate_to_sqlite.py
 ```
 
 Override Firebird input explicitly:
 
-```powershell
-python migrate_to_sqlite.py --tbbackup ./TB6DATENBANK.FDB
+```bash
+py migrate_to_sqlite.py --tbbackup ./TB6DATENBANK.FDB
 ```
 
 On success, the candidate database replaces `TB6.sqlite` and the previous accepted file is moved to `TB6.sqlite.previous`.
@@ -95,7 +101,7 @@ Common mismatch classes in the report:
 Recommended remediation flow:
 
 1. Fix the migration defect or source-data extraction issue.
-2. Rerun `python migrate_to_sqlite.py`.
+2. Rerun `py migrate_to_sqlite.py`.
 3. Recheck `validation_reports/latest.json`.
 4. Promote only after all blocking checks pass.
 
@@ -108,4 +114,4 @@ Update the validator whenever user-visible read requirements change in `app.py`,
 - newly user-visible typed or flag-like fields are introduced
 - core entity relationships change
 
-Whenever the validator changes, rerun `python validate_migration_fidelity.py` against the current accepted database to confirm the baseline still reflects actual runtime behavior.
+Whenever the validator changes, rerun `py validate_migration_fidelity.py` against the current accepted database to confirm the baseline still reflects actual runtime behavior.

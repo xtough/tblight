@@ -47,28 +47,40 @@ All variables are optional; defaults are used when omitted.
 
 These commands are the same on all supported platforms.
 
+### 0. Restore Firebird backup
+
+```bash
+py fdb_restore.py
+```
+
+Or specify a backup file explicitly:
+
+```bash
+py fdb_restore.py "TB Sicherung 20260613_1207.fbk.zip"
+```
+
 ### 1. Run migration (candidate -> validate -> promote)
 
 ```bash
-python migrate_to_sqlite.py
+py migrate_to_sqlite.py
 ```
 
 ### 2. Run fidelity validation only
 
 ```bash
-python validate_migration_fidelity.py
+py validate_migration_fidelity.py
 ```
 
 ### 3. Override Firebird input file explicitly
 
 ```bash
-python migrate_to_sqlite.py --tbbackup ./TB6DATENBANK.FDB
+py migrate_to_sqlite.py --tbbackup ./TB6DATENBANK.FDB
 ```
 
 ### 4. Run local backend API
 
 ```bash
-python app.py
+py app.py
 ```
 
 ## Shell Examples
@@ -78,7 +90,7 @@ python app.py
 ```powershell
 $env:TBBACKUP = "C:/data/TB6DATENBANK.FDB"
 $env:TB_ISQL_PATH = "C:/Program Files/Firebird/Firebird_2_1/bin/isql.exe"
-python migrate_to_sqlite.py
+py migrate_to_sqlite.py
 ```
 
 ### bash/zsh
@@ -86,7 +98,7 @@ python migrate_to_sqlite.py
 ```bash
 export TBBACKUP="/data/TB6DATENBANK.FDB"
 export TB_ISQL_PATH="/opt/firebird/bin/isql"
-python migrate_to_sqlite.py
+py migrate_to_sqlite.py
 ```
 
 ## Preflight Diagnostics
@@ -113,7 +125,7 @@ If a required dependency is missing, execution exits early with actionable messa
 
 If setup fails:
 
-1. Run `python validate_migration_fidelity.py --help` and verify expected parameters.
+1. Run `py validate_migration_fidelity.py --help` and verify expected parameters.
 2. Set `TB_ISQL_PATH` explicitly to a known working `isql` binary.
 3. Set `TBBACKUP` explicitly to a known readable Firebird database file.
 4. Re-run migration/validation and inspect preflight diagnostics.
@@ -123,8 +135,8 @@ If setup fails:
 Use this checklist to verify equivalent behavior across Windows and at least one non-Windows environment:
 
 1. Set `TBBACKUP` and `TB_ISQL_PATH` explicitly.
-2. Run `python migrate_to_sqlite.py` and confirm promotion succeeds.
-3. Run `python validate_migration_fidelity.py` and confirm PASS/FAIL matches for the same data snapshot.
+2. Run `py migrate_to_sqlite.py` and confirm promotion succeeds.
+3. Run `py validate_migration_fidelity.py` and confirm PASS/FAIL matches for the same data snapshot.
 4. Compare generated `validation_reports/latest.json` summary fields (`status`, `checks_run`, `blocking_failures`).
 
 ## Maintenance Guidance
@@ -145,5 +157,5 @@ After changing Python runtime dependencies:
 3. Regenerate `requirements.txt` with:
 
 ```bash
-python -m pip freeze > requirements.txt
+py -m pip freeze > requirements.txt
 ```
