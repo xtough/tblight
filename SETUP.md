@@ -139,7 +139,17 @@ Use this checklist to verify equivalent behavior across Windows and at least one
 3. Run `py validate_migration_fidelity.py` and confirm PASS/FAIL matches for the same data snapshot.
 4. Compare generated `validation_reports/latest.json` summary fields (`status`, `checks_run`, `blocking_failures`).
 
-## Maintenance Guidance
+## Development
+
+### Running Tests
+
+Unit tests cover `fdb_restore.py` (backup discovery, zip extraction, FSS patch, password resolution):
+
+```bash
+py -m pytest test_fdb_restore.py -v
+```
+
+### Maintenance Guidance
 
 When scripts or dependencies change:
 
@@ -148,7 +158,7 @@ When scripts or dependencies change:
 3. Re-run manual cross-platform verification checklist.
 4. Update `MIGRATION_FIDELITY.md` when validation behavior or report contracts change.
 
-## Dependency Manifest Maintenance
+### Dependency Manifest Maintenance
 
 After changing Python runtime dependencies:
 
