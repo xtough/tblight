@@ -2,7 +2,10 @@
 
 ## Purpose
 
-The Firebird-to-SQLite migration now produces a candidate SQLite database first and only promotes it to the accepted database path after fidelity validation passes.
+The Firebird-to-SQLite migration produces a candidate SQLite database first and only promotes it to the accepted database path after passing two sequential gates:
+
+1. **Fidelity validation** — confirms the candidate faithfully represents the Firebird source. This gate is independent of any previously accepted SQLite file.
+2. **Delta gate** — compares the candidate against the currently accepted `TB6.sqlite` (when one exists) and requires explicit user acknowledgment before promotion. Skipped automatically on the first migration when no accepted database is present.
 
 ## Blocking Read Workflows
 
@@ -79,7 +82,15 @@ Override Firebird input explicitly:
 py migrate_to_sqlite.py --tbbackup ./TB6DATENBANK.FDB
 ```
 
-On success, the candidate database replaces `TB6.sqlite` and the previous accepted file is moved to `TB6.sqlite.previous`.
+**Promotion flow (repeat migration):**
+
+1. Migration writes `TB6.sqlite.candidate`.
+2. Fidelity validation runs against Firebird. Fails fast if blocking checks fail — `TB6.sqlite` is unchanged.
+3. Delta gate compares candidate against `TB6.sqlite`, prints the report, and prompts: `Promote candidate to TB6.sqlite? [y/N]:`
+   Default is abort (`N`). The candidate is retained at `TB6.sqlite.candidate` if the user aborts.
+4. On confirmation, the candidate replaces `TB6.sqlite` and the previous accepted file moves to `TB6.sqlite.previous`.
+
+**First migration (no accepted database):** steps 2 and 4 run; step 3 is skipped automatically.
 
 ## Failure Handling
 

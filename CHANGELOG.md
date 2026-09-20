@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `fdb_restore.py`: CLI utility to restore a `TB*.fbk.zip` Firebird backup archive to `TB6DATENBANK.FDB`. Auto-discovers backup files, offers to back up any existing database before overwriting, and applies the correct `gbak` charset flags for TB6 archives.
+- Migration delta gate: after fidelity validation passes, `migrate_to_sqlite.py` now compares the candidate against the accepted `TB6.sqlite` (new records, deleted records, modified records, and retroactive BEGEHUNGEN date anomalies) and requires explicit user confirmation before promoting. First migration (no accepted database present) skips the gate automatically.
 
 ### Changed
 

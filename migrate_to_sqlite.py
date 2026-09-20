@@ -459,6 +459,190 @@ def promote_candidate(candidate_db, accepted_db):
     print(f"Promoted validated SQLite database to: {accepted_db}")
 
 
+def get_sqlite_pk_columns(con, table):
+    """Return PK column names for a SQLite table; fall back to ['ID'] when none declared."""
+    rows = con.execute(f'PRAGMA table_info("{table}")').fetchall()
+    pks = [row[1] for row in rows if row[5] > 0]
+    return pks if pks else ['ID']
+
+
+_ROW_DIFF_CAP = 500
+
+
+def compare_sqlite_delta(candidate_path, accepted_path):
+    """Compare candidate SQLite against accepted; return dict with new/deleted/modified/date_anomalies."""
+    delta = {
+        'new': {},
+        'deleted': {},
+        'modified': {},
+        'date_anomalies': [],
+        'skipped_large_tables': [],
+    }
+
+    cand_con = sqlite3.connect(f'file:{candidate_path}?mode=ro', uri=True)
+    acc_con = sqlite3.connect(f'file:{accepted_path}?mode=ro', uri=True)
+
+    try:
+        def _user_tables(con):
+            return {row[0] for row in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )}
+
+        cand_tables = _user_tables(cand_con)
+        acc_tables = _user_tables(acc_con)
+
+        for table in sorted(cand_tables | acc_tables):
+            in_cand = table in cand_tables
+            in_acc = table in acc_tables
+
+            if not in_cand:
+                count = acc_con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+                delta['deleted'][table] = {'count': count, 'samples': []}
+                continue
+            if not in_acc:
+                count = cand_con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+                delta['new'][table] = {'count': count, 'samples': []}
+                continue
+
+            pks = get_sqlite_pk_columns(cand_con, table)
+            pk_expr = ', '.join(f'"{p}"' for p in pks)
+            single_pk = len(pks) == 1
+
+            cand_pks = set(
+                row[0] if single_pk else row
+                for row in cand_con.execute(f'SELECT {pk_expr} FROM "{table}"')
+            )
+            acc_pks = set(
+                row[0] if single_pk else row
+                for row in acc_con.execute(f'SELECT {pk_expr} FROM "{table}"')
+            )
+
+            try:
+                new_pks = sorted(cand_pks - acc_pks)
+                del_pks = sorted(acc_pks - cand_pks)
+            except TypeError:
+                new_pks = list(cand_pks - acc_pks)
+                del_pks = list(acc_pks - cand_pks)
+
+            if new_pks:
+                delta['new'][table] = {'count': len(new_pks), 'samples': new_pks[:10]}
+            if del_pks:
+                delta['deleted'][table] = {'count': len(del_pks), 'samples': del_pks[:10]}
+
+            # Row-level diff for modified records (capped at _ROW_DIFF_CAP rows per side)
+            cand_total = cand_con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            acc_total = acc_con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+
+            if cand_total > _ROW_DIFF_CAP or acc_total > _ROW_DIFF_CAP:
+                delta['skipped_large_tables'].append(table)
+                continue
+
+            cand_cur = cand_con.execute(f'SELECT * FROM "{table}"')
+            cols = [desc[0] for desc in cand_cur.description]
+            pk_indices = [i for i, c in enumerate(cols) if c in pks]
+            if not pk_indices:
+                continue
+
+            def make_pk(row, _indices=pk_indices, _single=single_pk):
+                vals = [row[i] for i in _indices]
+                return vals[0] if _single else tuple(vals)
+
+            cand_rows = {make_pk(row): row for row in cand_cur.fetchall()}
+            acc_rows = {
+                make_pk(row): row
+                for row in acc_con.execute(f'SELECT * FROM "{table}"').fetchall()
+            }
+
+            changes = []
+            try:
+                shared = sorted(set(cand_rows) & set(acc_rows))
+            except TypeError:
+                shared = list(set(cand_rows) & set(acc_rows))
+            for pk_val in shared:
+                c_row = cand_rows[pk_val]
+                a_row = acc_rows[pk_val]
+                if c_row != a_row:
+                    diff = {cols[i]: (a_row[i], c_row[i]) for i in range(len(cols)) if c_row[i] != a_row[i]}
+                    changes.append({'pk': pk_val, 'changes': diff})
+                    if len(changes) == 10:
+                        break
+            if changes:
+                delta['modified'][table] = changes
+
+        # Date anomaly detection: new BEGEHUNGEN with DATUM < MAX(accepted DATUM)
+        if 'BEGEHUNGEN' in acc_tables and 'BEGEHUNGEN' in cand_tables:
+            max_row = acc_con.execute('SELECT MAX(DATUM) FROM "BEGEHUNGEN"').fetchone()
+            max_datum = max_row[0] if max_row else None
+            if max_datum:
+                pk_col = get_sqlite_pk_columns(cand_con, 'BEGEHUNGEN')[0]
+                acc_beg_pks = set(
+                    row[0] for row in acc_con.execute(f'SELECT "{pk_col}" FROM "BEGEHUNGEN"')
+                )
+                anomalies = []
+                for row in cand_con.execute(
+                    f'SELECT "{pk_col}", DATUM FROM "BEGEHUNGEN" WHERE DATUM IS NOT NULL AND DATUM < ?',
+                    (max_datum,),
+                ):
+                    if row[0] not in acc_beg_pks:
+                        anomalies.append({'pk': row[0], 'DATUM': row[1], 'accepted_max_datum': max_datum})
+                delta['date_anomalies'] = anomalies
+
+    finally:
+        cand_con.close()
+        acc_con.close()
+
+    return delta
+
+
+def format_delta_report(delta):
+    print('\n=== Migration Delta Report ===\n')
+
+    if delta['new']:
+        print('New Records:')
+        for table, info in sorted(delta['new'].items()):
+            print(f"  {table:<42} +{info['count']}")
+    else:
+        print('New Records: none')
+
+    print('\n--- Anomalies ---')
+    has_anomalies = delta['deleted'] or delta['modified'] or delta['date_anomalies']
+
+    if not has_anomalies:
+        print('  None detected.')
+    else:
+        if delta['deleted']:
+            print('\nDeleted Records:')
+            for table, info in sorted(delta['deleted'].items()):
+                line = f"  {table:<42} -{info['count']}"
+                samples = info.get('samples', [])
+                if samples:
+                    line += f'  (samples: {samples})'
+                print(line)
+
+        if delta['modified']:
+            print('\nModified Records:')
+            for table, changes in sorted(delta['modified'].items()):
+                print(f'  {table}: {len(changes)} changed row(s)')
+                for change in changes[:10]:
+                    for col, (old, new) in change['changes'].items():
+                        print(f"    Row {change['pk']}: {col}: {old!r} -> {new!r}")
+
+        if delta['date_anomalies']:
+            print('\nDate Anomalies (retroactive ascents):')
+            for anomaly in delta['date_anomalies'][:10]:
+                print(f"  BEGEHUNGEN #{anomaly['pk']}  DATUM={anomaly['DATUM']}  (accepted max: {anomaly['accepted_max_datum']})")
+
+    if delta['skipped_large_tables']:
+        print(f"\nRow-level diff skipped (table too large): {', '.join(delta['skipped_large_tables'])}")
+
+    print()
+
+
+def prompt_delta_acknowledgment():
+    response = input('Promote candidate to TB6.sqlite? [y/N]: ').strip()
+    return response in ('y', 'Y')
+
+
 if __name__ == '__main__':
     args = parse_args()
     runtime = configure_runtime(args)
@@ -480,5 +664,13 @@ if __name__ == '__main__':
         print(f"\nMigration fidelity validation failed. Candidate database kept at: {candidate_db}")
         print(f"Accepted SQLite database remains unchanged at: {accepted_db}")
         raise SystemExit(validation_code)
+
+    if accepted_db.exists():
+        print("\nComparing candidate against accepted database...")
+        delta = compare_sqlite_delta(candidate_db, accepted_db)
+        format_delta_report(delta)
+        if not prompt_delta_acknowledgment():
+            print(f"Promotion aborted. Candidate retained at: {candidate_db}")
+            raise SystemExit(1)
 
     promote_candidate(candidate_db, accepted_db)
